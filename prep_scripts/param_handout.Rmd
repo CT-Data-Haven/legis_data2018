@@ -1,0 +1,338 @@
+---
+output: 
+  pdf_document: 
+    fig_crop: no
+    fig_width: 7.5
+    fig_height: 4.5
+    latex_engine: xelatex
+mainfont: Minion Pro
+header-includes: 
+  \usepackage{fancyhdr}
+  \pagestyle{fancy}
+  \fancyhf{ }
+  \chead{DRAFT - 02/2020}
+  \rfoot{\includegraphics[height=0.15in]{../_utils/DataHaven_Black.png}}
+  \pagenumbering{gobble}
+geometry: 
+- top=0.75in
+- right=0.5in
+- bottom=0.75in
+- left=0.5in
+linespread: 1.1
+subparagraph: yes
+urlcolor: "blue"
+params:
+  geoid: "S010"
+---
+
+---
+title: Connecticut State Legislative Profile, 2020
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	fig.showtext = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	dpi = 300
+)
+```
+
+```{r}
+library(waffle)
+library(patchwork)
+```
+
+```{r}
+source("../_utils/utils.R")
+theme_set(theme_din2())
+
+dist_id <- params$geoid
+chambers <- list(H = "house", S = "senate")
+chamber <- chambers[[substr(dist_id, 1, 1)]]
+is_senate <- chamber == "senate"
+dist_num <- parse_number(dist_id)
+dist_name <- sprintf("State %s District %s", str_to_title(chamber), dist_num)
+dist_shortname <- paste0(toupper(substr(dist_id, 1, 1)), dist_num)
+dist_midname <- paste("Dist.", dist_num)
+dist_sf <- dists_sf[[chamber]] %>% 
+  filter(id == substring(dist_id, 2)) %>%
+  mutate(lbl = dist_midname)
+
+reps <- jsonlite::read_json("../to_viz/legislators_meta.json", simplifyVector = TRUE)[[chamber]] 
+dist_rep <- reps %>%
+  mutate(rep = str_glue("{name} ({party})")) %>%
+  filter(id == dist_id) %>%
+  pull(rep)
+towns <- jsonlite::read_json("../to_viz/town_lookup.json", simplifyVector = TRUE)[[chamber]][[dist_id]] %>%
+  paste(collapse = ", ") %>%
+  str_replace(", ([\\w\\s]+$)", " and \\1")
+```
+
+
+
+```{r}
+prof <- readRDS("../output_data/acs_legislative_profile_2018.rds")
+dist_prof <- prof %>%
+  filter(level == "state" | name == dist_id) %>%
+  mutate(name = fct_recode(name, !!!set_names(dist_id, dist_midname)))
+totals <- dist_prof %>%
+  filter(level == "district", group %in% c("total_pop", "total_households")) %>%
+  distinct(group, estimate) %>%
+  deframe() %>%
+  as.list()
+tbls <- split(dist_prof, dist_prof$topic, drop = TRUE)
+cws <- readRDS("../output_data/cws_legislative_data_2018.rds") %>%
+  mutate(level = ifelse(district == "Connecticut", "state", "district") %>% as_factor()) %>%
+  mutate_at(vars(topic, question), as_factor) %>%
+  mutate_if(is.factor, fct_drop) %>%
+  filter(district %in% c("Connecticut", dist_id)) %>%
+  mutate(topic = fct_relabel(topic, clean_titles),
+         question = question %>% 
+           fct_relabel(clean_titles) %>%
+           fct_recode("Very good self-rated health" = "Very good self rate health", "Dental visit in past year" = "Dental visit past yr", "Local parks in good condition" = "Good cond of parks", "Feel local govt is responsive" = "Local govt responsive", "Think residents are able to obtain jobs" = "Suitable employment", "Good place to raise kids" = "Good to raise kids", "Adults with diabetes" = "Diabetes"),
+         district = fct_recode(district, !!!set_names(dist_id, dist_midname)))
+```
+
+See data and interactive maps for all state Senate and House districts on DataHaven's Dashboard page (https://www.ctdatahaven.org/data-dashboard) or hosted on data.world ()
+
+# `r dist_name`
+
+* Represented by `r dist_rep`
+* Covers all or parts of `r towns`
+* Total population: `r comma(totals[["total_pop"]])` (`r comma(totals[["total_households"]])` households)
+
+
+
+```{r distmaps, fig.width=7.5, fig.height=4.5}
+# ct_bbox <- state_sf %>%
+#   st_buffer(5e-2) %>%
+#   st_bbox() %>%
+#   setNames(c("left", "bottom", "right", "top"))
+# ct_basemap <- get_stamenmap(ct_bbox, zoom = 10, maptype = "toner-lite")
+
+state_map <- ggmap(ct_basemap) +
+  geom_sf(data = dist_sf, color = bupu7[6], fill = bupu7[6], alpha = 0.5, size = 0.4, inherit.aes = FALSE) +
+  geom_sf(data = state_sf, color = bupu7[7], fill = "transparent", size = 0.35, inherit.aes = FALSE) +
+  coord_sf(ndiscr = 0) +
+  labs(x = NULL, y = NULL)
+
+dist_bbox <- dist_sf %>%
+  st_buffer(1e-2) %>%
+  st_bbox() %>%
+  setNames(c("left", "bottom", "right", "top"))
+dist_basemap <- get_stamenmap(dist_bbox, zoom = 13, maptype = "toner-lite")
+
+dist_map <- ggmap(dist_basemap) +
+  geom_sf(aes(fill = lbl, color = lbl, alpha = lbl), data = dist_sf, size = 0.8, inherit.aes = FALSE) +
+  geom_sf(aes(fill = "Town boundaries", color = "Town boundaries", alpha = "Town boundaries"), data = cwi::town_sf, size = 0.5, inherit.aes = FALSE) +
+  coord_sf(ndiscr = 0) +
+  labs(x = NULL, y = NULL, fill = NULL, color = NULL, alpha = NULL) +
+  scale_fill_manual(values = c(bupu7[5], "transparent")) +
+  scale_color_manual(values = c(bupu7[5], bupu7[7])) +
+  scale_alpha_manual(values = c(0.5, 0.00)) +
+  theme(plot.margin = margin(6, 6, 6, 12, "pt"),
+        legend.position = "bottom",
+        legend.key.height = unit(0.8, "lines"),
+        legend.key.width = unit(1.1, "lines"),
+        legend.text = element_text(margin = margin(0, 1, 0, 0, "lines")))
+
+# cowplot::plot_grid(state_map, dist_map,
+#                    nrow = 1)
+state_map +
+  dist_map +
+  plot_layout(nrow = 1)
+```
+
+
+
+## Demographics
+
+```{r age, fig.height=3, fig.width=7.5}
+# for top corner, get max x, then max y
+pop_age <- tbls$age %>%
+  select(-share) %>%
+  pivot_wider(names_from = group, values_from = estimate) %>%
+  mutate(ages18_64 = ages18plus - ages65plus) %>%
+  select(-ages18plus) %>%
+  pivot_longer(-c(topic:name), names_to = "group") %>%
+  mutate(group = fct_relevel(group, "ages65plus", after = Inf)) %>%
+  arrange(group) %>%
+  group_by_at(vars(-group, -value)) %>%
+  calc_shares(value = value, digits = 2) %>%
+  ungroup() %>%
+  mutate(group = fct_relabel(group, clean_ages)) %>%
+  filter(group != "Total pop") %>%
+  mutate_if(is.factor, fct_drop)
+
+age_pal <- setNames(pastel[c(2, 3, 8)], levels(pop_age$group))
+
+p_age <- pop_age %>%
+  mutate(share = round_sum100(share * 100)) %>%
+  ggplot() +
+  geom_waffle(aes(fill = group, values = share), flip = TRUE, radius = unit(2, "pt"), size = 0.6, color = "white") +
+  coord_fixed() +
+  facet_wrap(vars(name))  +
+  scale_fill_manual(values = age_pal)
+
+age_lbls <- ggplot_build(p_age)$data[[1]] %>%
+  inner_join(enframe(age_pal, name = "group", value = "fill"), by = "fill", suffix = c(".y", "")) %>%
+  group_by(PANEL, group) %>%
+  mutate(sqrs = n()) %>%
+  filter(x == max(x)) %>%
+  filter(y == max(y)) %>%
+  distinct(PANEL, group, .keep_all = TRUE) %>%
+  ungroup() %>%
+  select(panel = PANEL, group, x, y, sqrs) %>%
+  mutate(panel = as.numeric(as.character(panel))) %>%
+  # bind_cols(pop_age) %>%
+  left_join(pop_age %>% mutate(panel = as.numeric(name)), by = c("group", "panel")) %>%
+  mutate(lbl = str_glue("{group}: {percent(share, accuracy = 1)}"),
+         offset = ifelse(sqrs == 1, 0.6, 0))
+
+
+p_age +
+  geom_text(aes(x = x, y = y + offset, label = lbl),
+            data = age_lbls,
+            hjust = 1, size = 2.8, fontface = "plain", nudge_x = 0.25) +
+  # scale_x_continuous(expand = expand_scale(add = 0.1)) +
+  scale_y_continuous(expand = expand_scale(add = c(0.1, 0.25))) +
+  theme_din2(ygrid = FALSE) +
+  theme(axis.text = element_blank(),
+        legend.position = "none",
+        strip.text = element_text(face = "plain", vjust = 0, hjust = 0.05)) +
+  labs(x = NULL, y = NULL, title = "Population by age, 2018")
+```
+
+```{r race, fig.height=3, fig.width=7.5}
+pop_race <- tbls$race %>%
+  select(-share) %>%
+  group_by_at(vars(topic:name)) %>%
+  calc_shares() %>%
+  ungroup() %>%
+  mutate(group = group %>% 
+           fct_relevel("total_pop", "white") %>%
+           fct_relabel(clean_titles)) %>%
+  arrange(name, group) %>%
+  filter(group != "Total pop") %>%
+  mutate_if(is.factor, fct_drop)
+
+race_pal <- setNames(pastel[c(1, 3, 2, 4)], levels(pop_race$group))
+
+p_race <- pop_race %>%
+  mutate(share = round_sum100(share * 100)) %>%
+  ggplot(aes(fill = group, values = share)) +
+  geom_waffle(flip = TRUE, radius = unit(2, "pt"), color = "white", size = 0.6) +
+  coord_fixed() +
+  scale_fill_manual(values = race_pal) +
+  facet_wrap(vars(name)) 
+
+race_lbls <- ggplot_build(p_race)$data[[1]] %>%
+  inner_join(enframe(race_pal, name = "group", value = "fill"), by = "fill", suffix = c(".y", "")) %>%
+  group_by(PANEL, group) %>%
+  mutate(sqrs = n()) %>%
+  filter(x == max(x)) %>%
+  filter(y == max(y)) %>%
+  distinct(PANEL, group, .keep_all = TRUE) %>%
+  ungroup() %>%
+  select(panel = PANEL, group, x, y, sqrs) %>%
+  mutate(panel = as.numeric(as.character(panel))) %>%
+  # bind_cols(pop_age) %>%
+  left_join(pop_race %>% mutate(panel = as.numeric(name)), by = c("group", "panel")) %>%
+  mutate(lbl = str_glue("{group}: {percent(share, accuracy = 1)}"),
+         offset = ifelse(sqrs == 1, 0.6, 0))
+
+p_race +
+  geom_text(aes(x = x, y = y + offset, label = lbl),
+            data = race_lbls,
+            hjust = 1, size = 2.8, fontface = "plain", nudge_x = 0.25) +
+  # scale_x_continuous(expand = expand_scale(add = c(0, 3))) +
+  scale_y_continuous(expand = expand_scale(add = c(0.1, 0.25))) +
+  theme_din2(ygrid = FALSE) +
+  theme(axis.text = element_blank(),
+        legend.position = "none",
+        strip.text = element_text(face = "plain", vjust = 0, hjust = 0.05)) +
+  labs(x = NULL, y = NULL, title = "Population by race, 2018")
+```
+
+
+
+## Households and income
+
+```{r households, fig.width=7.5, fig.height=2.5}
+housing_income <- tbls[c("housing", "income")] %>%
+  bind_rows() %>%
+  mutate(group = as_factor(group)) %>%
+  filter(!is.na(share)) %>%
+  mutate(group = group %>%
+           fct_relabel(clean_titles) %>%
+           fct_recode("Homeownership" = "Owner occupied", "Low-income" = "Low income") %>%
+           fct_relabel(paste, "rate"))
+
+housing_income %>%
+  mutate(per_lbl = percent(share, accuracy = 1),
+         # num_lbl = str_glue("\u00a0\n({comma(estimate)})")
+         lbl = ifelse(level == "district", str_glue("{per_lbl}\n({comma(estimate)})"), per_lbl)
+         ) %>%
+  mutate(ratio = share / max(share),
+         small = ratio < 0.13,
+         offset = ifelse(small, 1, -1) * 1e-2) %>%
+  # mutate(lbl = paste0(bold(per_lbl), "\n(", num_lbl, ")")) %>%
+  ggplot(aes(x = name, y = share, fill = level)) +
+  facet_wrap(vars(group), nrow = 1) +
+  geom_col(width = 0.8) +
+  geom_text(aes(label = lbl, y = share + offset, color = small, vjust = as.numeric(!small)), lineheight = 0.95) +
+  # geom_text(aes(label = num_lbl, y = share + offset, color = small, vjust = as.numeric(!small)),
+  #           data = . %>% filter(level == "district"), 
+  #           fontface = "plain", lineheight = 1.0) +
+  scale_y_barcontinuous(breaks = NULL) +
+  scale_x_discrete(expand = expand_scale(mult = 0.7)) +
+  scale_fill_manual(values = c(state = "gray60", district = bupu7[5])) +
+  scale_color_manual(values = c(`TRUE` = "gray40", `FALSE` = "white")) +
+  theme(legend.position = "none",
+        strip.text = element_text(face = "bold")) +
+  labs(x = NULL, y = NULL)
+```
+
+
+```{r eval=is_senate, results='asis'}
+pander::pandoc.header("Community well-being", 2)
+```
+
+
+
+```{r cws, fig.height=7, fig.width=7.2, eval=is_senate}
+cws %>%
+  arrange(topic) %>%
+  mutate(question = fct_inorder(question)) %>%
+  group_by(question) %>%
+  mutate(offset = max(value) / 40) %>%
+  ggplot(aes(x = district, y = value, fill = level)) +
+  geom_col(width = 0.8) +
+  geom_text(aes(label = percent(value, accuracy = 1), y = value - offset), color = "white", vjust = 1) +
+  scale_y_barcontinuous(breaks = NULL) +
+  scale_x_discrete(expand = expand_scale(mult = 0.6)) +
+  scale_fill_manual(values = c(state = "gray60", district = bupu7[5])) +
+  facet_wrap(vars(question), ncol = 5, scales = "free_y", labeller = labeller(.cols = label_wrap_gen())) +
+  theme(legend.position = "none",
+        strip.text = element_text(face = "bold", vjust = 1),
+        panel.spacing.y = unit(0.5, "in")) +
+  labs(x = NULL, y = NULL)
+```
+
+---
+
+\linespread{1}
+DataHaven
+
+129 Church Street, Suite 605
+
+New Haven, CT 06510
+
+(203) 500-7059 / info@ctdatahaven.org
+
+[ctdatahaven.org](http://www.ctdatahaven.org)
+
+DataHaven is a non-profit organization with a 25-year history of public service to Greater New Haven and Connecticut. Our mission is to improve quality of life by collecting, sharing, and interpreting public data for effective decision making. DataHaven is a formal partner of the National Neighborhood Indicators Partnership of the Urban Institute in Washington, DC.

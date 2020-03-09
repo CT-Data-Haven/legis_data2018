@@ -44,6 +44,7 @@ senate_df <- bind_rows(prof, cws) %>%
   distinct(name, indicator, .keep_all = TRUE)
 
 lst(house_df, senate_df) %>%
+  set_names(str_extract, "^[a-z]+") %>%
   iwalk(function(df, chmbr) {
     df %>%
       pivot_wider(names_from = indicator) %>%

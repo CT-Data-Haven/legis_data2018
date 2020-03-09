@@ -1,0 +1,3 @@
+source;project;year;url
+US Census Bureau.;American Community Survey 2018 5-year estimates.;2018;https://data.census.gov
+DataHaven;Community Wellbeing Survey.;2018;https://www.ctdatahaven.org/reports/datahaven-community-wellbeing-survey

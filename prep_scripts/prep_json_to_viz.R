@@ -110,3 +110,11 @@ write_json(prof_wide, str_glue("to_viz/legislative_wide_{acs_year}.json"), auto_
 write_json(meta, str_glue("to_viz/legislative_meta_{acs_year}.json"), auto_unbox = TRUE)
 
 
+# sources and dw urls
+sources <- read_delim("_utils/sources.txt", delim = ";")
+dwurls <- read_csv("_utils/dataworld_urls.csv") %>%
+  deframe() %>%
+  as.list()
+
+lst(sources, dwurls) %>%
+  jsonlite::write_json("to_viz/sources_meta.json", auto_unbox = TRUE)

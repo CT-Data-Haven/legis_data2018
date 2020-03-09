@@ -96,7 +96,7 @@ cws <- readRDS("../output_data/cws_legislative_data_2018.rds") %>%
          district = fct_recode(district, !!!set_names(dist_id, dist_midname)))
 ```
 
-See data and interactive maps for all state Senate and House districts on DataHaven's Dashboard page (https://www.ctdatahaven.org/data-dashboard) or hosted on data.world ()
+See data and interactive maps for all state Senate and House districts on DataHaven's Dashboard page (https://www.ctdatahaven.org/data-dashboard).
 
 # `r dist_name`
 
